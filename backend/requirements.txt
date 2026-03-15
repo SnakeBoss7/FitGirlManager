@@ -1,0 +1,7 @@
+fastapi==0.100.1
+uvicorn
+httpx
+beautifulsoup4
+sse-starlette
+python-multipart
+aiofiles
