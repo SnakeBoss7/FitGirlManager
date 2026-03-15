@@ -41,52 +41,28 @@ Make sure `backend/` is in your repo root.
 
 ### A. Update API base URL
 
-Create `src/config.js`:
+I have already created `src/config.js` for you. It now points to your Render URL:
 ```js
 export const API_BASE = import.meta.env.PROD
-  ? 'https://your-render-url.onrender.com'  // ← your Render URL
-  : ''  // dev uses vite proxy
+  ? 'https://fitgirlmanager.onrender.com'
+  : ''
 ```
 
-Update `src/api.js`:
-```js
-import { API_BASE } from './config'
-
-export async function scrape(url) {
-  const res = await fetch(`${API_BASE}/api/scrape`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
-    throw new Error(err.detail || `HTTP ${res.status}`)
-  }
-  return res.json()
-}
-```
-
-Update proxy URLs in `App.jsx`:
-```js
-// Change fetch URL from /api/proxy to:
-`${API_BASE}/api/proxy?url=...&filename=...`
-```
+---
 
 ### B. Update CORS on backend
 
-In `backend/main.py`, add your Vercel domain:
+I have updated `backend/main.py` with this list:
 ```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "https://your-app.vercel.app",  # ← add this
-    ],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+        allow_origins=[
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "https://fitgirlmanager.onrender.com",
+            # Add your Vercel URL here once you have it!
+        ],
 ```
+
+---
 
 ### C. Deploy to Vercel
 
@@ -101,10 +77,7 @@ app.add_middleware(
 | **Build Command** | `npm run build` |
 | **Output Directory** | `dist` |
 
-4. Add environment variable:
-   - `VITE_API_URL` = `https://your-render-url.onrender.com`
-
-5. Click **Deploy**
+4. Click **Deploy**
 
 ---
 

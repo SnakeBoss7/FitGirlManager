@@ -5,6 +5,7 @@ import StatsBar from './components/StatsBar'
 import ToastContainer from './components/Toast'
 import { useToast } from './hooks/useToast'
 import { scrape } from './api'
+import { API_BASE } from './config'
 
 const INITIAL_STATS = {
   done: 0,
@@ -107,8 +108,9 @@ export default function App() {
 
   /* ─── DOWNLOAD ─── */
   const downloadFileMegaStyle = async (url, filename, index, prevBytesRef, prevTimeRef) => {
+    const endpoint = API_BASE ? `${API_BASE}/api/proxy` : "/api/proxy"
     const res = await fetch(
-      `/api/proxy?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`
+      `${endpoint}?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`
     )
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`)

@@ -1,8 +1,6 @@
-/**
- * Thin API wrappers for communicating with the FastAPI backend.
- */
+import { API_BASE } from "./config";
 
-const BASE = "/api";
+const BASE = API_BASE ? `${API_BASE}/api` : "/api";
 
 /**
  * POST /api/scrape — fetch and parse a FitGirl repacks page.
