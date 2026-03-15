@@ -16,8 +16,9 @@ app.add_middleware(
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "https://fitgirlmanager.onrender.com",
+        "https://fit-girl-manager.vercel.app",
     ],
-    # allow_origin_regex="https://.*\\.vercel\\.app", # Option for vercel
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
