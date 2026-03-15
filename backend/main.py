@@ -27,6 +27,6 @@ app.include_router(scrape_router, prefix="/api")
 app.include_router(proxy_router, prefix="/api")
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok"}
