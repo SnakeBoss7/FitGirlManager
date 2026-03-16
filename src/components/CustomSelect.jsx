@@ -2,10 +2,7 @@ import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import { createPortal } from 'react-dom'
 
 /**
- * CustomSelect — glassmorphism dropdown rendered via portal to avoid overflow:hidden clipping.
- * Props:
- *   value, onChange, options=[{value,label,icon?}],
- *   disabled, placeholder, className
+ * CustomSelect — glassmorphism dropdown rendered via portal.
  */
 export default function CustomSelect({
   value,
@@ -24,12 +21,12 @@ export default function CustomSelect({
 
   const selected = options.find(o => o.value === value)
 
-  // Compute dropdown position from trigger rect
   const openDropdown = useCallback(() => {
     if (disabled || !triggerRef.current) return
     const r = triggerRef.current.getBoundingClientRect()
+    // Position exactly touching the bottom edge of the button (+1px gap)
     setPos({
-      top:   r.bottom + window.scrollY + 4,
+      top:   r.bottom + window.scrollY + 2, 
       left:  r.left + window.scrollX,
       width: Math.max(r.width, 150),
     })
@@ -37,21 +34,20 @@ export default function CustomSelect({
     setOpen(true)
   }, [disabled, options, value])
 
-  // Close on outside click or scroll
   useEffect(() => {
     if (!open) return
     function close() { setOpen(false) }
-    document.addEventListener('mousedown', (e) => {
+    const onMouseDown = (e) => {
       if (!listRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target)) close()
-    })
-    window.addEventListener('scroll', close, true)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('resize', close)
     return () => {
-      document.removeEventListener('mousedown', close)
-      window.removeEventListener('scroll', close, true)
+      document.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('resize', close)
     }
   }, [open])
 
-  // Keyboard nav
   const handleKeyDown = useCallback((e) => {
     if (disabled) return
     if (e.key === 'Enter' || e.key === ' ') {
@@ -79,11 +75,11 @@ export default function CustomSelect({
   const dropdown = open && createPortal(
     <div
       ref={listRef}
-      className="fixed z-[9999] rounded-xl overflow-hidden bg-[#0e1022]/98 backdrop-blur-2xl border border-white/[0.1] shadow-2xl shadow-black/60 animate-dropdown-in"
+      className="fixed z-[99999] rounded-xl overflow-hidden dropdown-panel backdrop-blur-2xl animate-dropdown-in"
       style={{ top: pos.top, left: pos.left, minWidth: pos.width }}
       onMouseDown={e => e.stopPropagation()}
     >
-      <div className="py-1.5 max-h-52 overflow-y-auto custom-scroll">
+      <div className="py-1 max-h-56 overflow-y-auto custom-scroll">
         {options.map((opt, idx) => {
           const isActive  = opt.value === value
           const isFocused = focused === idx
@@ -96,15 +92,15 @@ export default function CustomSelect({
               onClick={() => { onChange(opt.value); setOpen(false) }}
               className={`
                 flex items-center gap-2.5 px-3.5 py-2 text-sm cursor-pointer select-none
-                transition-colors duration-100
-                ${isFocused ? 'bg-white/[0.07]' : ''}
-                ${isActive ? 'text-violet-300' : 'text-slate-300'}
+                transition-colors duration-100 dropdown-item
+                ${isFocused ? 'focused' : ''}
+                ${isActive ? 'active' : ''}
               `}
             >
               {opt.icon && <span className="shrink-0 opacity-60">{opt.icon}</span>}
               <span className="flex-1 whitespace-nowrap">{opt.label}</span>
               {isActive && (
-                <svg className="w-3.5 h-3.5 text-violet-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-3.5 h-3.5 text-violet-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                 </svg>
               )}
@@ -128,20 +124,21 @@ export default function CustomSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={`
-          flex items-center gap-2 h-[34px] pl-3 pr-2.5 rounded-lg text-[13px] font-medium
-          border transition-all duration-150 select-none outline-none
+          flex items-center justify-between gap-2 h-8 px-3 rounded-lg text-[13.5px] font-medium
+          transition-all duration-150 select-none outline-none min-w-[120px]
           ${open
-            ? 'bg-violet-500/12 border-violet-500/35 text-violet-200 shadow-sm shadow-violet-500/10'
-            : 'bg-white/[0.04] border-white/[0.09] text-slate-300 hover:border-white/[0.15] hover:bg-white/[0.06]'
+            ? 'bg-violet-500/10 border border-violet-500/30 text-violet-600 dark:text-violet-300'
+            : 'input-field'
           }
           ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
-          focus-visible:ring-1 focus-visible:ring-violet-500/50
         `}
       >
-        {selected?.icon && <span className="shrink-0 opacity-60">{selected.icon}</span>}
-        <span className="whitespace-nowrap">{selected?.label ?? placeholder}</span>
+        <div className="flex items-center gap-2 overflow-hidden">
+          {selected?.icon && <span className="shrink-0 opacity-60">{selected.icon}</span>}
+          <span className="whitespace-nowrap truncate">{selected?.label ?? placeholder}</span>
+        </div>
         <svg
-          className={`w-3.5 h-3.5 shrink-0 text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 shrink-0 opacity-50 transition-transform duration-200 ${open ? 'rotate-180 text-violet-500' : ''}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />

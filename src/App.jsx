@@ -7,15 +7,7 @@ import { useToast } from './hooks/useToast'
 import { scrape } from './api'
 import { API_BASE } from './config'
 
-const INITIAL_STATS = {
-  done: 0,
-  total: 0,
-  failed: 0,
-  bytesDone: 0,
-  bytesTotal: null,
-  elapsed: 0,
-  speed: null,
-}
+const INITIAL_STATS = { done: 0, total: 0, failed: 0, bytesDone: 0, bytesTotal: null, elapsed: 0, speed: null }
 
 export default function App() {
   const [scrapeResult, setScrapeResult] = useState(() => {
@@ -24,6 +16,7 @@ export default function App() {
   const [items, setItems] = useState(() => {
     try { return JSON.parse(localStorage.getItem('fg_queue')) || [] } catch { return [] }
   })
+  const [theme, setTheme] = useState(() => localStorage.getItem('fg_theme') || 'dark')
 
   const [selected, setSelected]       = useState(new Set())
   const [progressMap, setProgressMap] = useState({})
@@ -38,26 +31,45 @@ export default function App() {
     hoster:          'fuckingfast',
   })
 
-  // Capture settings at download-start so mid-download changes don't break the queue
-  const activeSettingsRef   = useRef(settings)
-  const abortControllerRef  = useRef(null)
-  const startTimeRef        = useRef(null)
-  const elapsedInterval     = useRef(null)
+  const activeSettingsRef  = useRef(settings)
+  const abortControllerRef = useRef(null)
+  const startTimeRef       = useRef(null)
+  const elapsedInterval    = useRef(null)
   const { toasts, addToast, removeToast } = useToast()
 
+  // Persist state
+  useEffect(() => { localStorage.setItem('fg_queue', JSON.stringify(items)) }, [items])
+  useEffect(() => { localStorage.setItem('fg_scrapeResult', JSON.stringify(scrapeResult)) }, [scrapeResult])
+  
+  // Apply theme class to body
   useEffect(() => {
-    localStorage.setItem('fg_queue', JSON.stringify(items))
-  }, [items])
-  useEffect(() => {
-    localStorage.setItem('fg_scrapeResult', JSON.stringify(scrapeResult))
-  }, [scrapeResult])
+    localStorage.setItem('fg_theme', theme)
+    if (theme === 'dark') document.body.classList.add('dark')
+    else document.body.classList.remove('dark')
+  }, [theme])
+
+  function toggleTheme() {
+    setTheme(t => t === 'dark' ? 'light' : 'dark')
+  }
+
+  function handleClearCache() {
+    if (downloading) {
+      addToast('Cannot clear cache while a download is running', 'warning')
+      return
+    }
+    setScrapeResult(null)
+    setItems([])
+    setSelected(new Set())
+    setProgressMap({})
+    setStats(INITIAL_STATS)
+    localStorage.removeItem('fg_scrapeResult')
+    localStorage.removeItem('fg_queue')
+    addToast('Cache cleared. Ready for a new URL.', 'success')
+  }
 
   /* ─── SCRAPE ─────────────────────────────────── */
   async function handleScrape(url) {
-    // Guard: warn (but allow) if a download is running
-    if (downloading) {
-      addToast('Heads up — a download is still running. Scraping a new URL will not interrupt it.', 'warning', 5000)
-    }
+    if (downloading) addToast('A download is running. Scraping will not interrupt it.', 'warning', 5000)
 
     setScraping(true)
     setScrapeResult(null)
@@ -71,19 +83,23 @@ export default function App() {
       setScrapeResult(result)
       setItems(result.queue)
 
+      // Auto-select fuckingfast by default if available
+      const hasFF = result.queue.some(i => i.hoster === 'fuckingfast')
+      const targetHoster = hasFF ? 'fuckingfast' : result.hoster
+      
       const s = settings
       const toSelect = result.queue.filter(i => {
         if (i.status === 'failed') return false
         if (!s.includeLang     && i.isLanguage) return false
         if (!s.includeOptional && i.isOptional) return false
-        if (i.hoster !== result.hoster) return false
+        if (i.hoster !== targetHoster) return false
         return true
       }).map(i => i.index)
 
-      setSettings(prev => ({ ...prev, hoster: result.hoster }))
+      setSettings(prev => ({ ...prev, hoster: targetHoster }))
       setSelected(new Set(toSelect))
-      setStats(prev => ({ ...prev, total: result.queue.filter(i => i.hoster === result.hoster).length }))
-      addToast(`Found ${result.queue.length} files for "${result.game}"`, 'success')
+      setStats(prev => ({ ...prev, total: result.queue.filter(i => i.hoster === targetHoster).length }))
+      addToast(`Found ${result.queue.length} files (${targetHoster} selected)`, 'success')
     } catch (e) {
       addToast(e.message, 'error')
     } finally {
@@ -103,9 +119,7 @@ export default function App() {
   const handleToggleAll = useCallback(() => {
     setSelected(prev => {
       const hoster = activeSettingsRef.current.hoster || settings.hoster
-      const eligible = items.filter(i =>
-        i.status !== 'done' && i.status !== 'downloading' && i.hoster === hoster
-      )
+      const eligible = items.filter(i => i.status !== 'done' && i.status !== 'downloading' && i.hoster === hoster)
       const allChecked = eligible.every(i => prev.has(i.index))
       if (allChecked) return new Set()
       return new Set(eligible.map(i => i.index))
@@ -117,14 +131,24 @@ export default function App() {
     setSelected(prev => new Set([...prev, index]))
   }, [])
 
+  const handleRangeSelect = useCallback((from, to) => {
+    if (from === null || to === null) return // User clicked clear
+    setSelected(prev => {
+      const next = new Set(prev)
+      const hoster = activeSettingsRef.current.hoster || settings.hoster
+      
+      const eligible = items.filter(i => i.status !== 'done' && i.status !== 'downloading' && i.hoster === hoster)
+      eligible.forEach(i => {
+        if (i.index >= from && i.index <= to) next.add(i.index)
+      })
+      return next
+    })
+  }, [items, settings.hoster])
+
   /* ─── DOWNLOAD ───────────────────────────────── */
   const downloadFileMegaStyle = async (url, filename, index, prevBytesRef, prevTimeRef) => {
     const endpoint = API_BASE ? `${API_BASE}/api/proxy` : '/api/proxy'
-    const res = await fetch(
-      `${endpoint}?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`,
-      { signal: abortControllerRef.current.signal }
-    )
-
+    const res = await fetch(`${endpoint}?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`, { signal: abortControllerRef.current.signal })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
     const total  = parseInt(res.headers.get('content-length'), 10) || 0
@@ -133,78 +157,56 @@ export default function App() {
     const chunks = []
 
     while (true) {
-      // Check abort before every read
-      if (abortControllerRef.current?.signal.aborted) {
-        reader.cancel()
-        throw new Error('Aborted')
-      }
-
+      if (abortControllerRef.current?.signal.aborted) { reader.cancel(); throw new Error('Aborted') }
       const { done, value } = await reader.read()
       if (done) break
 
       chunks.push(value)
       loaded += value.length
-
       setProgressMap(prev => ({ ...prev, [index]: { bytesDone: loaded, total } }))
 
-      // Throttle speed updates to every 500ms
       const now = Date.now()
       const dt  = (now - prevTimeRef.current) / 1000
       if (dt > 0.5) {
         const delta = loaded - prevBytesRef.current
-        setStats(s => ({
-          ...s,
-          bytesDone: s.bytesDone + delta,
-          bytesTotal: total > 0 ? total : s.bytesTotal,
-          speed: Math.round(delta / dt),
-        }))
-        prevBytesRef.current = loaded
-        prevTimeRef.current  = now
+        setStats(s => ({ ...s, bytesDone: s.bytesDone + delta, bytesTotal: total > 0 ? total : s.bytesTotal, speed: Math.round(delta / dt) }))
+        prevBytesRef.current = loaded; prevTimeRef.current = now
       }
     }
 
     const blob    = new Blob(chunks, { type: 'application/octet-stream' })
     const blobUrl = URL.createObjectURL(blob)
     const a       = document.createElement('a')
-    a.href        = blobUrl
-    a.download    = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    a.href        = blobUrl; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
   }
 
   async function handleStartDownload() {
-    // Snapshot settings at start so UI changes mid-download have no effect
     const snap = { ...settings }
     activeSettingsRef.current = snap
 
-    let queue = items.filter(i =>
-      selected.has(i.index) && i.status !== 'done' && i.hoster === snap.hoster
-    )
+    let queue = items.filter(i => selected.has(i.index) && i.status !== 'done' && i.hoster === snap.hoster)
     if (!queue.length) { addToast('No files selected.', 'warning'); return }
-
     if (snap.order === 'bottom_up') queue = [...queue].reverse()
 
     setDownloading(true)
-    startTimeRef.current    = Date.now()
+    startTimeRef.current = Date.now()
     abortControllerRef.current = new AbortController()
 
     elapsedInterval.current = setInterval(() => {
       setStats(s => ({ ...s, elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000) }))
     }, 1000)
 
-    let currentIndex     = 0
-    const prevBytesRef   = { current: 0 }
-    const prevTimeRef    = { current: Date.now() }
+    let currentIndex = 0
+    const prevBytesRef = { current: 0 }
+    const prevTimeRef  = { current: Date.now() }
 
     const runQueue = async () => {
       while (currentIndex < queue.length) {
         if (abortControllerRef.current?.signal.aborted) break
-
-        const item     = queue[currentIndex++]
-        let attempts   = 0
-        let success    = false
+        const item   = queue[currentIndex++]
+        let attempts = 0
+        let success  = false
 
         setItems(old => old.map(i => i.index === item.index ? { ...i, status: 'downloading' } : i))
 
@@ -232,125 +234,100 @@ export default function App() {
     }
 
     const numWorkers = Math.min(snap.concurrent, queue.length)
-    const workers    = Array.from({ length: numWorkers }, () => runQueue())
-    await Promise.all(workers)
+    await Promise.all(Array.from({ length: numWorkers }, () => runQueue()))
 
     clearInterval(elapsedInterval.current)
     setDownloading(false)
-
-    if (!abortControllerRef.current?.signal.aborted) {
-      addToast('All downloads complete! 🎉', 'success', 6000)
-    }
+    if (!abortControllerRef.current?.signal.aborted) addToast('All downloads complete! 🎉', 'success', 6000)
   }
 
-  /* ─── CANCEL ─────────────────────────────────── */
   function handleCancel() {
     abortControllerRef.current?.abort()
     clearInterval(elapsedInterval.current)
     setDownloading(false)
-
-    // Fix: reset any items stuck in 'downloading' back to 'pending' so they can be retried
     setItems(prev => prev.map(i => i.status === 'downloading' ? { ...i, status: 'pending' } : i))
     setStats(s => ({ ...s, speed: null }))
-
-    addToast('Download cancelled — in-progress files reset to Ready.', 'warning', 4000)
+    addToast('Download cancelled.', 'warning', 4000)
   }
 
-  // Cleanup on unmount
-  useEffect(() => () => {
-    abortControllerRef.current?.abort()
-    clearInterval(elapsedInterval.current)
-  }, [])
+  useEffect(() => () => { abortControllerRef.current?.abort(); clearInterval(elapsedInterval.current) }, [])
 
-  const filteredItems  = items.filter(i => i.hoster === settings.hoster)
-  const selectedCount  = items.filter(i => selected.has(i.index) && i.hoster === settings.hoster).length
+  const filteredItems = items.filter(i => i.hoster === settings.hoster)
+  const selectedCount = items.filter(i => selected.has(i.index) && i.hoster === settings.hoster).length
 
   /* ─── RENDER ─────────────────────────────────── */
   return (
-    <div className="min-h-screen text-slate-100 relative">
-      {/* Ambient background orbs */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-60 -left-60 w-[500px] h-[500px] bg-violet-600/[0.07] rounded-full blur-[100px]" />
-        <div className="absolute top-1/3 -right-40 w-[400px] h-[400px] bg-indigo-600/[0.05] rounded-full blur-[100px]" />
-        <div className="absolute bottom-0 left-1/4 w-[350px] h-[350px] bg-purple-600/[0.04] rounded-full blur-[100px]" />
-        {/* Subtle dot grid */}
-        <div
-          className="absolute inset-0 opacity-[0.018]"
-          style={{
-            backgroundImage: 'radial-gradient(rgba(139,92,246,.8) 1px, transparent 1px)',
-            backgroundSize: '28px 28px',
-          }}
-        />
+    <div className="min-h-screen relative overflow-x-hidden">
+      {/* Background elements */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-0 left-0 w-full h-[600px] bg-gradient-to-b from-[var(--ambient-purple)] to-transparent" />
       </div>
 
-      <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 py-12 flex flex-col gap-5">
+      {/* Theme toggle (Top Right Floating) */}
+      <button 
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-[var(--card)] border border-[var(--card-border)] shadow-sm flex items-center justify-center text-[var(--text-2)] hover:text-[var(--text-1)] hover:border-[var(--accent-dim)] transition-all"
+        title="Toggle Light/Dark Theme"
+      >
+        {theme === 'dark' ? (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+        ) : (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+        )}
+      </button>
 
-        {/* ── HEADER ── */}
-        <header className="text-center space-y-3 mb-1">
-          <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-400/80">
-            <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse-dot" />
-            FitGirl Repack Manager
+      <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 py-12 flex flex-col gap-5">
+        
+        {/* Header */}
+        <header className="text-center space-y-2.5 mb-2">
+          <div className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-500">
+            <div className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse-dot" />
+            FitGirl Manager
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gradient">
-            Download Queue
-          </h1>
-          <p className="text-slate-500 text-sm max-w-sm mx-auto leading-relaxed">
-            Paste a FitGirl Repacks URL to resolve download links and manage your queue.
-          </p>
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-gradient">Download Queue</h1>
         </header>
 
-        {/* ── URL INPUT ── */}
-        <div className="glass-card p-4">
-          <UrlInput
-            onScrape={handleScrape}
-            loading={scraping}
-            settings={settings}
-            onSettingsChange={setSettings}
-            downloading={downloading}
-          />
+        {/* URL Input */}
+        <div className="card p-4">
+          <UrlInput onScrape={handleScrape} loading={scraping} settings={settings} onSettingsChange={setSettings} downloading={downloading} onClear={handleClearCache} />
         </div>
 
-        {/* ── SCRAPING SKELETON ── */}
-        {scraping && (
-          <div className="glass-card p-5 space-y-3 animate-fade-up">
-            <div className="flex items-center gap-3">
-              <svg className="w-4 h-4 text-violet-400 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <span className="text-sm text-slate-300 font-medium">Scraping and resolving download links…</span>
-            </div>
-            <div className="space-y-2">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="shimmer h-10 bg-white/[0.02] rounded-lg" style={{ animationDelay: `${i * 180}ms` }} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── GAME INFO BAR ── */}
+        {/* Scrape Result Info */}
         {scrapeResult && !scraping && (
-          <div className="flex flex-wrap items-center gap-3 animate-fade-up px-1">
-            <h2 className="text-base font-bold text-white truncate flex-1">{scrapeResult.game}</h2>
+          <div className="flex flex-wrap items-center gap-3 animate-fade-up px-1 py-1">
+            <h2 className="text-base font-bold text-[var(--text-1)] truncate flex-1">{scrapeResult.game}</h2>
             <div className="flex gap-2 shrink-0">
               {scrapeResult.totalSizeEstimate && (
-                <span className="text-[11px] bg-white/[0.04] border border-white/[0.06] text-slate-400 px-2.5 py-1 rounded-lg font-mono">
+                <span className="text-[11px] font-mono bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--text-2)] px-2.5 py-1 rounded-md">
                   ~{scrapeResult.totalSizeEstimate}
                 </span>
               )}
-              <span className="text-[11px] bg-violet-500/10 border border-violet-500/15 text-violet-300 px-2.5 py-1 rounded-lg font-semibold">
+              <span className="text-[11px] font-bold bg-violet-100 text-violet-700 border border-violet-200 dark:bg-[var(--accent-dim)] dark:text-violet-300 dark:border-violet-500/20 px-2.5 py-1 rounded-md">
                 {scrapeResult.totalFiles} files
               </span>
             </div>
           </div>
         )}
 
-        {/* ── STATS BAR ── */}
+        {/* Scraping Loading Skeleton */}
+        {scraping && (
+          <div className="card p-5 space-y-3 animate-fade-up">
+            <div className="flex items-center gap-3">
+              <svg className="w-4 h-4 text-violet-500 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              <span className="text-sm font-semibold text-[var(--text-2)] animate-pulse">Scraping links…</span>
+            </div>
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => <div key={i} className="shimmer h-12 rounded-xl" style={{ animationDelay: `${i * 180}ms` }} />)}
+            </div>
+          </div>
+        )}
+
+        {/* Stats */}
         {downloading && <StatsBar stats={stats} />}
 
-        {/* ── QUEUE TABLE ── */}
+        {/* Queue Table */}
         {filteredItems.length > 0 && !scraping && (
-          <div className="glass-card p-4 space-y-3 animate-fade-up">
+           <div className="card px-2 py-4 sm:p-5 space-y-3 animate-fade-up">
             <QueueTable
               items={filteredItems}
               progressMap={progressMap}
@@ -358,42 +335,23 @@ export default function App() {
               onToggle={handleToggle}
               onToggleAll={handleToggleAll}
               onRetry={handleRetry}
+              onRangeSelect={handleRangeSelect}
             />
 
-            {/* Actions footer */}
-            <div className="flex items-center justify-between pt-3 border-t border-white/[0.04]">
-              <p className="text-xs text-slate-500">
-                <span className="text-slate-300 font-semibold tabular-nums">{selectedCount}</span>
-                <span className="mx-1 opacity-40">/</span>
-                <span className="font-medium tabular-nums">{filteredItems.length}</span>
-                <span className="ml-1">selected</span>
+            <div className="flex items-center justify-between pt-4 mt-2 border-t border-[var(--card-border)] px-1 sm:px-2">
+              <p className="text-xs text-[var(--text-3)]">
+                <span className="text-[var(--text-1)] font-bold tabular-nums">{selectedCount}</span>
+                <span className="mx-[3px] opacity-40">/</span>
+                <span className="font-semibold tabular-nums">{filteredItems.length}</span>
               </p>
               <div className="flex gap-2.5">
                 {downloading ? (
-                  <button
-                    id="cancel-btn"
-                    onClick={handleCancel}
-                    className="
-                      flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 text-red-300
-                      text-xs font-semibold px-4 py-2 rounded-xl transition-all duration-200
-                      hover:bg-red-500/20 hover:border-red-500/30 active:scale-95
-                    "
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    Cancel
+                  <button onClick={handleCancel} className="flex items-center gap-1.5 bg-red-100 text-red-600 border border-red-200 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400 text-xs font-bold px-4 py-2 rounded-xl hover:bg-red-200 dark:hover:bg-red-500/20 active:scale-95 transition-all">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg> Cancel
                   </button>
                 ) : (
-                  <button
-                    id="download-btn"
-                    onClick={handleStartDownload}
-                    disabled={selectedCount === 0}
-                    className="btn-glow flex items-center gap-1.5 !text-xs !py-2 !px-5"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
+                  <button onClick={handleStartDownload} disabled={selectedCount === 0} className="btn-primary !text-xs !py-[9px] !px-5 gap-2">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                     Download{selectedCount > 0 ? ` (${selectedCount})` : ''}
                   </button>
                 )}
@@ -402,33 +360,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ── EMPTY STATE ── */}
-        {!items.length && !scraping && (
-          <div className="flex flex-col items-center justify-center py-24 text-center gap-5 animate-fade-in">
-            <div className="relative">
-              <div className="absolute inset-0 bg-violet-500/8 rounded-full blur-2xl scale-150" />
-              <div className="relative bg-white/[0.025] border border-white/[0.06] rounded-2xl p-6">
-                <svg className="w-11 h-11 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                </svg>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <p className="text-slate-400 text-sm font-semibold">No files in queue</p>
-              <p className="text-slate-600 text-xs">Paste a FitGirl URL above to get started</p>
-            </div>
-          </div>
-        )}
-
-        {/* ── FOOTER ── */}
-        <footer className="text-center pt-2">
-          <p className="text-[11px] text-slate-700">
-            FastAPI + React · Files stream through memory → browser
-          </p>
-        </footer>
       </div>
-
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>
   )
