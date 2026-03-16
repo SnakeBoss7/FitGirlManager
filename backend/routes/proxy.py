@@ -1,6 +1,7 @@
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+import asyncio
 
 router = APIRouter()
 
@@ -14,12 +15,12 @@ HEADERS = {
     "Referer": "https://fuckingfast.co/",
 }
 
+
 @router.get("/proxy")
-async def proxy_download(url: str, filename: str):
-    # 60 second inactivity timeout in case hoster hangs
+async def proxy_download(url: str, filename: str, request: Request):
     client = httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=60.0)
     req = client.build_request("GET", url)
-    
+
     try:
         r = await client.send(req, stream=True)
     except Exception as e:
@@ -30,20 +31,33 @@ async def proxy_download(url: str, filename: str):
     async def stream_generator():
         try:
             async for chunk in r.aiter_bytes(chunk_size=65536):
+                # Check if client disconnected — stop streaming to free server resources
+                if await request.is_disconnected():
+                    break
                 yield chunk
+        except asyncio.CancelledError:
+            # Client cancelled the request (closed browser tab, cancelled download)
+            pass
+        except Exception:
+            pass
         finally:
             await r.aclose()
             await client.aclose()
 
     res_headers = {
-        "Content-Disposition": f"attachment; filename=\"{filename}\""
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store",
     }
-    
+
     if "content-length" in r.headers:
         res_headers["Content-Length"] = r.headers["content-length"]
 
+    # Forward content-type if upstream sends one (helps browser deduce file type)
+    ct = r.headers.get("content-type")
+    media_type = ct if ct and ct != "application/octet-stream" else "application/octet-stream"
+
     return StreamingResponse(
         stream_generator(),
-        media_type="application/octet-stream",
-        headers=res_headers
+        media_type=media_type,
+        headers=res_headers,
     )
