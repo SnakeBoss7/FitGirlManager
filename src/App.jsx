@@ -4,7 +4,7 @@ import QueueTable from './components/QueueTable'
 import StatsBar from './components/StatsBar'
 import ToastContainer from './components/Toast'
 import { useToast } from './hooks/useToast'
-import { scrape } from './api'
+import { scrape, checkBackendHealth } from './api'
 import { API_BASE } from './config'
 
 const INITIAL_STATS = { done: 0, total: 0, failed: 0, bytesDone: 0, bytesTotal: null, elapsed: 0, speed: null }
@@ -22,6 +22,7 @@ export default function App() {
   const [progressMap, setProgressMap] = useState({})
   const [scraping, setScraping]       = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [backendStatus, setBackendStatus] = useState({ checked: false, ok: null, latencyMs: null, error: null, checking: true })
   const [stats, setStats]             = useState(INITIAL_STATS)
   const [settings, setSettings]       = useState({
     includeLang:     false,
@@ -47,6 +48,24 @@ export default function App() {
     if (theme === 'dark') document.body.classList.add('dark')
     else document.body.classList.remove('dark')
   }, [theme])
+
+  // Health check on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function ping() {
+      setBackendStatus(s => ({ ...s, checking: true }));
+      console.log(`[Health] Pinging backend at: ${API_BASE || 'localhost (proxy)'}`);
+      const result = await checkBackendHealth();
+      if (cancelled) return;
+      console.log(`[Health] Result:`, result);
+      setBackendStatus({ checked: true, ok: result.ok, latencyMs: result.latencyMs, error: result.error || null, checking: false });
+      if (!result.ok) {
+        addToast(`Backend unreachable: ${result.error}`, 'error', 10000);
+      }
+    }
+    ping();
+    return () => { cancelled = true; };
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleTheme() {
     setTheme(t => t === 'dark' ? 'light' : 'dark')
@@ -278,6 +297,33 @@ export default function App() {
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 py-12 flex flex-col gap-5">
         
+        {/* Backend Status Banner */}
+        {backendStatus.checked && !backendStatus.ok && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 flex items-start gap-3 animate-fade-up">
+            <svg className="w-5 h-5 text-red-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-red-400">Backend Unreachable</p>
+              <p className="text-xs text-red-300/80 mt-0.5 break-words">{backendStatus.error}</p>
+              <p className="text-[10px] text-red-300/50 mt-1 font-mono">Target: {API_BASE || 'localhost (vite proxy)'}</p>
+            </div>
+            <button
+              onClick={async () => { setBackendStatus(s => ({ ...s, checking: true })); const r = await checkBackendHealth(); setBackendStatus({ checked: true, ok: r.ok, latencyMs: r.latencyMs, error: r.error || null, checking: false }); if (r.ok) addToast(`Backend connected! (${r.latencyMs}ms)`, 'success'); }}
+              disabled={backendStatus.checking}
+              className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/20 transition-all disabled:opacity-50"
+            >
+              {backendStatus.checking ? 'Checking…' : 'Retry'}
+            </button>
+          </div>
+        )}
+
+        {backendStatus.checked && backendStatus.ok && (
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 flex items-center gap-2 animate-fade-up" style={{ animationDuration: '3s', animationFillMode: 'forwards', opacity: 1 }}>
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-semibold text-emerald-400">Backend connected</span>
+            <span className="text-[10px] text-emerald-400/50 font-mono ml-auto">{backendStatus.latencyMs}ms · {API_BASE || 'localhost'}</span>
+          </div>
+        )}
+
         {/* Header */}
         <header className="text-center space-y-2.5 mb-2">
           <div className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-500">
