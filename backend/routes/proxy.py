@@ -18,14 +18,24 @@ HEADERS = {
 
 @router.get("/proxy")
 async def proxy_download(url: str, filename: str, request: Request):
+    from fastapi import HTTPException
     client = httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=60.0)
+
+    # On-the-fly URL resolution for fuckingfast
+    if "fuckingfast.co" in url and "/dl/" not in url:
+        from resolver import resolve_fuckingfast
+        resolved = await resolve_fuckingfast(url, client)
+        if not resolved:
+            await client.aclose()
+            raise HTTPException(status_code=502, detail="Failed to resolve download URL")
+        url = resolved
+
     req = client.build_request("GET", url)
 
     try:
         r = await client.send(req, stream=True)
     except Exception as e:
         await client.aclose()
-        from fastapi import HTTPException
         raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
 
     async def stream_generator():
