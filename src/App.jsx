@@ -307,7 +307,7 @@ export default function App() {
               <p className="text-[10px] text-red-300/50 mt-1 font-mono">Target: {API_BASE || 'localhost (vite proxy)'}</p>
             </div>
             <button
-              onClick={async () => { setBackendStatus(s => ({ ...s, checking: true })); const r = await checkBackendHealth(); setBackendStatus({ checked: true, ok: r.ok, latencyMs: r.latencyMs, error: r.error || null, checking: false }); if (r.ok) addToast(`Backend connected! (${r.latencyMs}ms)`, 'success'); }}
+              onClick={async () => { setBackendStatus(s => ({ ...s, checking: true })); const r = await checkBackendHealth(); setBackendStatus({ checked: true, ok: r.ok, latencyMs: r.latencyMs, error: r.error || null, checking: false }); if (r.ok) addToast('Backend connected!', 'success'); }}
               disabled={backendStatus.checking}
               className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/20 transition-all disabled:opacity-50"
             >
@@ -320,7 +320,7 @@ export default function App() {
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 flex items-center gap-2 animate-fade-up" style={{ animationDuration: '3s', animationFillMode: 'forwards', opacity: 1 }}>
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-xs font-semibold text-emerald-400">Backend connected</span>
-            <span className="text-[10px] text-emerald-400/50 font-mono ml-auto">{backendStatus.latencyMs}ms · {API_BASE || 'localhost'}</span>
+            <span className="text-[10px] text-emerald-400/50 font-mono ml-auto">{API_BASE || 'localhost'}</span>
           </div>
         )}
 
