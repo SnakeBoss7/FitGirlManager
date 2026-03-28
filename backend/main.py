@@ -16,6 +16,7 @@ app.add_middleware(
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "https://fitgirlmanager.onrender.com",
+        "https://fitgirlmanager-udb0.onrender.com",
         "https://fit-girl-manager.vercel.app",
     ],
     allow_credentials=True,

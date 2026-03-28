@@ -1,6 +1,5 @@
-import { API_BASE } from "./config";
+import { API_BASES } from "./config";
 
-const BASE = API_BASE ? `${API_BASE}/api` : "/api";
 const REQUEST_TIMEOUT_MS = 30_000; // 30 seconds
 
 /**
@@ -28,12 +27,12 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_M
     if (err.name === "AbortError") {
       if (existingSignal?.aborted) throw err; // user-initiated abort
       throw new Error(
-        `⏱️ Request timed out after ${timeoutMs / 1000}s. The backend at "${API_BASE || 'localhost'}" may be sleeping or unreachable.`
+        `⏱️ Request timed out after ${timeoutMs / 1000}s. The backend at "${url}" may be sleeping or unreachable.`
       );
     }
     if (err.message?.includes("Failed to fetch") || err.message?.includes("NetworkError")) {
       throw new Error(
-        `🌐 Network error — could not reach the backend at "${API_BASE || 'localhost'}". ` +
+        `🌐 Network error — could not reach the backend at "${url}". ` +
         `Check if the server is running and CORS is configured. (${err.message})`
       );
     }
@@ -47,14 +46,51 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_M
 }
 
 /**
+ * Helper: Try fetching across all available API bases
+ */
+async function fetchWithFailover(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  let lastError;
+  let lastResponse;
+  
+  for (const base of API_BASES) {
+    const url = base ? `${base}${path}` : path;
+    try {
+      const res = await fetchWithTimeout(url, options, timeoutMs);
+      
+      // If the response is OK, or if it's a 4xx client error, return it immediately
+      if (res.ok || (res.status >= 400 && res.status < 500)) {
+        return res;
+      }
+      
+      // If it's a 5xx server error, we try the next base
+      if (res.status >= 500) {
+        lastResponse = res;
+        console.warn(`[API] Server error (${res.status}) at ${url}, trying next fallback...`);
+        continue;
+      }
+      
+      return res;
+    } catch (err) {
+      lastError = err;
+      if (err.name === "AbortError" && options.signal?.aborted) {
+        throw err; // user explicitly aborted, do not retry
+      }
+      console.warn(`[API] Failed to reach ${url}, trying next fallback...`, err.message);
+    }
+  }
+  
+  if (lastResponse) return lastResponse;
+  throw lastError || new Error("All backend connection attempts failed.");
+}
+
+/**
  * Check backend health — useful for diagnosing connection issues.
  * @returns {Promise<{ ok: boolean, latencyMs: number, error?: string }>}
  */
 export async function checkBackendHealth() {
-  const url = API_BASE ? `${API_BASE}/api/health` : "/api/health";
   const start = Date.now();
   try {
-    const res = await fetchWithTimeout(url, { method: "GET" }, 15_000);
+    const res = await fetchWithFailover('/api/health', { method: "GET" }, 15_000);
     const latencyMs = Date.now() - start;
     if (!res.ok) {
       return { ok: false, latencyMs, error: `Server returned HTTP ${res.status}` };
@@ -72,10 +108,10 @@ export async function checkBackendHealth() {
  * @returns {Promise<ScrapeResponse>}
  */
 export async function scrape(url) {
-  console.log(`[API] Scraping: ${url} → ${BASE}/scrape`);
+  console.log(`[API] Scraping: ${url}`);
   const start = Date.now();
 
-  const res = await fetchWithTimeout(`${BASE}/scrape`, {
+  const res = await fetchWithFailover(`/api/scrape`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
@@ -107,8 +143,9 @@ export function startDownloadStream(payloadReq, downloadDir, callbacks) {
       const bodyPayload = Array.isArray(payloadReq) ? { queue: payloadReq } : { ...payloadReq }
       if (downloadDir) bodyPayload.download_dir = downloadDir
 
-      console.log(`[API] Starting download stream → ${BASE}/download/stream`);
-      const res = await fetch(`${BASE}/download/stream`, {
+      console.log(`[API] Starting download stream`);
+      
+      const res = await fetchWithFailover(`/api/download/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload),

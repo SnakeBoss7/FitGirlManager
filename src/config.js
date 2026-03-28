@@ -1,3 +1,6 @@
-export const API_BASE = import.meta.env.PROD
-  ? 'https://fitgirlmanager.onrender.com'
-  : ''; // Use vite proxy in dev
+export const API_BASES = import.meta.env.PROD
+  ? [
+      'https://fitgirlmanager-udb0.onrender.com', // Priority URL
+      'https://fitgirlmanager.onrender.com'       // Fallback URL
+    ]
+  : ['']; // Use vite proxy in dev
