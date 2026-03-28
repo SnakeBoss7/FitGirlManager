@@ -5,7 +5,9 @@ import StatsBar from './components/StatsBar'
 import ToastContainer from './components/Toast'
 import { useToast } from './hooks/useToast'
 import { scrape, checkBackendHealth } from './api'
-import { API_BASE } from './config'
+import { API_BASES } from './config'
+
+const API_BASE = API_BASES[0]
 
 const INITIAL_STATS = { done: 0, total: 0, failed: 0, bytesDone: 0, bytesTotal: null, elapsed: 0, speed: null }
 
