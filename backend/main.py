@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.scrape import router as scrape_router
 from routes.proxy import router as proxy_router
+from routes.resolve import router as resolve_router
 
 app = FastAPI(
     title="FitGirl Repack Manager API",
@@ -26,6 +27,7 @@ app.add_middleware(
 
 app.include_router(scrape_router, prefix="/api")
 app.include_router(proxy_router, prefix="/api")
+app.include_router(resolve_router, prefix="/api")
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])

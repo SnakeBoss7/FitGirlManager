@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel
 from enum import Enum
 
@@ -40,3 +40,12 @@ class DownloadRequest(BaseModel):
     queue: List[QueueItem]
     download_dir: Optional[str] = None  # defaults to ~/Downloads/FitGirl
     max_concurrent: int = 3
+
+
+class ResolveRequest(BaseModel):
+    urls: List[str]
+
+
+class ResolveResponse(BaseModel):
+    # Mapping of original URL to resolved URL (or none if failed)
+    resolved: Dict[str, Optional[str]]

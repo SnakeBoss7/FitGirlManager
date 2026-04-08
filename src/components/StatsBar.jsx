@@ -12,7 +12,7 @@ function fmtSpeed(bps) {
 }
 
 function fmtTime(seconds) {
-  if (!seconds) return '0:00'
+  if (!seconds || seconds <= 0) return '0:00'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   const s = seconds % 60
@@ -26,9 +26,10 @@ function calcETA(bytesDone, speed, bytesTotal) {
   return Math.ceil(remaining / speed)
 }
 
-export default function StatsBar({ stats }) {
+export default function StatsBar({ stats, paused }) {
   const { done, total, failed, bytesDone, bytesTotal, elapsed, speed } = stats
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  // ETA based on total remaining bytes across all files (not just current file)
   const eta = calcETA(bytesDone, speed, bytesTotal)
 
   const statItems = [
@@ -47,6 +48,7 @@ export default function StatsBar({ stats }) {
     {
       label: 'Downloaded',
       value: fmt(bytesDone),
+      sub: bytesTotal > 0 ? `/ ${fmt(bytesTotal)}` : undefined,
       color: 'text-blue-400',
       bg: 'bg-blue-500/10',
       icon: (
@@ -56,20 +58,24 @@ export default function StatsBar({ stats }) {
       ),
     },
     {
-      label: 'Speed',
-      value: fmtSpeed(speed),
-      color: 'text-violet-400',
-      bg: 'bg-violet-500/10',
-      icon: (
+      label: paused ? 'Paused' : 'Speed',
+      value: paused ? '—' : fmtSpeed(speed),
+      color: paused ? 'text-amber-400' : 'text-violet-400',
+      bg: paused ? 'bg-amber-500/10' : 'bg-violet-500/10',
+      icon: paused ? (
+        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+        </svg>
+      ) : (
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       ),
     },
     {
-      label: eta ? 'ETA' : 'Elapsed',
-      value: eta ? fmtTime(eta) : fmtTime(elapsed),
-      color: eta ? 'text-amber-300' : 'text-amber-400',
+      label: eta && !paused ? 'ETA' : 'Elapsed',
+      value: eta && !paused ? fmtTime(eta) : fmtTime(elapsed),
+      color: eta && !paused ? 'text-amber-300' : 'text-amber-400',
       bg: 'bg-amber-500/10',
       icon: (
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -85,8 +91,14 @@ export default function StatsBar({ stats }) {
       <div className="glass-card !rounded-xl !p-3.5">
         <div className="flex items-center justify-between mb-2.5">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse-dot" />
-            <span className="text-xs font-semibold text-slate-300">Downloading</span>
+            {paused ? (
+              <div className="w-2 h-2 rounded-full bg-amber-400" />
+            ) : (
+              <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse-dot" />
+            )}
+            <span className="text-xs font-semibold text-slate-300">
+              {paused ? 'Paused' : 'Downloading'}
+            </span>
           </div>
           <div className="flex items-center gap-2 text-xs font-mono text-slate-500 tabular-nums">
             <span>{done}/{total} files · {pct}%</span>
@@ -100,7 +112,11 @@ export default function StatsBar({ stats }) {
         {/* Track */}
         <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-400 transition-all duration-700 ease-out progress-glow"
+            className={`h-full rounded-full transition-all duration-700 ease-out ${
+              paused
+                ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                : 'bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-400 progress-glow'
+            }`}
             style={{ width: `${pct}%` }}
           />
         </div>
