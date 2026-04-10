@@ -55,7 +55,7 @@ async function fetchWithFailover(path, options = {}, timeoutMs = REQUEST_TIMEOUT
 
   // Prioritize known working base if we have one
   const basesToTry = activeApiBase && !isHealthCheck
-    ? [activeApiBase, ...API_BASES.filter(b => b !== activeApiBase)]
+    ? [activeApiBase] // Lock onto the working base, do not failover to dead ones!
     : API_BASES;
 
   for (const base of basesToTry) {
@@ -150,7 +150,7 @@ export async function preresolve(urls) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ urls }),
-  });
+  }, 120_000);
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
