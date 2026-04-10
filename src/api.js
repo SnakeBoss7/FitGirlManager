@@ -44,20 +44,29 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_M
   }
 }
 
+let activeApiBase = null; // Cache the resolved good base once
+
 /**
  * Helper: Try fetching across all available API bases
  */
-async function fetchWithFailover(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+async function fetchWithFailover(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS, isHealthCheck = false) {
   let lastError;
   let lastResponse;
 
-  for (const base of API_BASES) {
+  // Prioritize known working base if we have one
+  const basesToTry = activeApiBase && !isHealthCheck
+    ? [activeApiBase, ...API_BASES.filter(b => b !== activeApiBase)]
+    : API_BASES;
+
+  for (const base of basesToTry) {
+
     const url = base ? `${base}${path}` : path;
     try {
       const res = await fetchWithTimeout(url, options, timeoutMs);
 
       // If the response is OK, or if it's a 4xx client error, return it immediately
       if (res.ok || (res.status >= 400 && res.status < 500)) {
+        if (!activeApiBase) activeApiBase = base;
         return res;
       }
 
@@ -68,6 +77,7 @@ async function fetchWithFailover(path, options = {}, timeoutMs = REQUEST_TIMEOUT
         continue;
       }
 
+      if (!activeApiBase) activeApiBase = base;
       return res;
     } catch (err) {
       lastError = err;
@@ -89,13 +99,18 @@ async function fetchWithFailover(path, options = {}, timeoutMs = REQUEST_TIMEOUT
 export async function checkBackendHealth() {
   const start = Date.now();
   try {
-    const res = await fetchWithFailover('/api/health', { method: "GET" }, 15_000);
+    const res = await fetchWithFailover('/api/health', { method: "GET" }, 15_000, true);
     const latencyMs = Date.now() - start;
     if (!res.ok) {
       return { ok: false, latencyMs, error: `Server returned HTTP ${res.status}` };
     }
     const data = await res.json();
-    return { ok: data.status === "ok", latencyMs, error: data.status !== "ok" ? "Unexpected response" : undefined };
+    return { 
+      ok: data.status === "ok", 
+      latencyMs, 
+      error: data.status !== "ok" ? "Unexpected response" : undefined,
+      connectedBase: activeApiBase
+    };
   } catch (err) {
     return { ok: false, latencyMs: Date.now() - start, error: err.message };
   }
@@ -121,7 +136,7 @@ export async function scrape(url) {
 }
 
 export function buildProxyUrl(fileUrl, filename) {
-  const base = API_BASES[0] || '';
+  const base = activeApiBase !== null ? activeApiBase : (API_BASES[0] || '');
   return `${base}/api/proxy?url=${encodeURIComponent(fileUrl)}&filename=${encodeURIComponent(filename)}`;
 }
 

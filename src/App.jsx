@@ -7,7 +7,6 @@ import { useToast } from './hooks/useToast'
 import { scrape, checkBackendHealth, buildProxyUrl, preresolve } from './api'
 import { API_BASES } from './config'
 
-const API_BASE = API_BASES[0]
 
 const INITIAL_STATS = { done: 0, total: 0, failed: 0, bytesDone: 0, bytesTotal: 0, elapsed: 0, speed: null }
 
@@ -95,7 +94,7 @@ export default function App() {
   const [scraping, setScraping]           = useState(false)
   const [downloading, setDownloading]     = useState(false)
   const [paused, setPaused]               = useState(false)
-  const [backendStatus, setBackendStatus] = useState({ checked: false, ok: null, latencyMs: null, error: null, checking: true })
+  const [backendStatus, setBackendStatus] = useState({ checked: false, ok: null, latencyMs: null, error: null, checking: true, connectedBase: null })
   const [stats, setStats]                 = useState(INITIAL_STATS)
   const [settings, setSettings]           = useState({
     includeLang:     false,
@@ -134,7 +133,7 @@ export default function App() {
       setBackendStatus(s => ({ ...s, checking: true }))
       const result = await checkBackendHealth()
       if (cancelled) return
-      setBackendStatus({ checked: true, ok: result.ok, latencyMs: result.latencyMs, error: result.error || null, checking: false })
+      setBackendStatus({ checked: true, ok: result.ok, latencyMs: result.latencyMs, error: result.error || null, checking: false, connectedBase: result.connectedBase })
       if (!result.ok) addToast(`Backend unreachable: ${result.error}`, 'error', 10000)
     }
     ping()
@@ -444,13 +443,13 @@ export default function App() {
             <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
             <div className="flex-1 min-w-0">
               <span className="font-semibold text-red-400 text-xs">Backend offline</span>
-              <span className="text-red-300/60 text-[10px] ml-2 font-mono">{API_BASE || 'localhost'}</span>
+              <span className="text-red-300/60 text-[10px] ml-2 font-mono">{API_BASES[0] || 'localhost'}</span>
             </div>
             <button
               onClick={async () => {
                 setBackendStatus(s => ({ ...s, checking: true }))
                 const r = await checkBackendHealth()
-                setBackendStatus({ checked: true, ok: r.ok, latencyMs: r.latencyMs, error: r.error || null, checking: false })
+                setBackendStatus({ checked: true, ok: r.ok, latencyMs: r.latencyMs, error: r.error || null, checking: false, connectedBase: r.connectedBase })
                 if (r.ok) addToast('Backend connected!', 'success')
               }}
               disabled={backendStatus.checking}
@@ -461,7 +460,7 @@ export default function App() {
           </div>
         )}
         {backendStatus.checked && backendStatus.ok && (
-          <BackendOkBanner latencyMs={backendStatus.latencyMs} apiBase={API_BASE} />
+          <BackendOkBanner latencyMs={backendStatus.latencyMs} apiBase={backendStatus.connectedBase} />
         )}
 
         {/* Header */}
