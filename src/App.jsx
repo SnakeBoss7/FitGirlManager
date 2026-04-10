@@ -344,7 +344,7 @@ export default function App() {
         while (attempts < 3 && !success) {
           if (abortControllerRef.current?.signal.aborted) break
           try {
-            const proxyUrl = buildProxyUrl(item.url, item.filename)
+            const proxyUrl = buildProxyUrl(item.url, item.filename, attempts)
             await downloadFile(proxyUrl, item.filename, abortControllerRef.current.signal, onProgress, dirHandle)
             setItems(old => old.map(i => i.index === item.index ? { ...i, status: 'done' } : i))
             setStats(s => ({ ...s, done: s.done + 1 }))

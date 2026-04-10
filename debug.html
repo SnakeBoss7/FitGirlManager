@@ -1,0 +1,78 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Not Found</title>
+    <meta name="title" content="Not Found">
+    <meta name="description" content="Fucking fast file hosting service">
+    <meta name="application-name" content="fuckingfast.co">
+    <link rel="shortcut icon" href="/static/favicon.ico">
+    <script src="/static/bundle.js?v=174b03882b2de16e6c9cdab7dc84e43c499ae480-dirty" defer></script>
+    <link rel="stylesheet" href="/static/whysostylish.css?v=174b03882b2de16e6c9cdab7dc84e43c499ae480-dirty">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>
+    
+    
+    
+    
+
+    
+</head>
+
+<body class="min-h-screen p-1.5" x-data="App()">
+<div>
+    <p class="text-center text-3xl font-bold mt-1 mb-0">FUCKINGFAST</p>
+    <p class="text-center mt-0">Fucking fast file hosting service</p>
+</div>
+<ul id="menu" class="text-center p-0 mb-7">
+    <li><a href="/">Index</a></li>
+    
+    <li><a href="/speedtest">Speed</a></li>
+    <li><a href="/help">Help</a></li>
+    <li><a href="/privacy">Privacy</a></li>
+    <li><a href="/terms">Terms</a></li>
+    <li><a href="/contact">Contact</a></li>
+    
+        <li><a href="/login">Login</a></li>
+    
+</ul>
+<div class="mx-auto max-w-[60rem]" hx-ext="response-targets">
+    <h1 class="text-3xl mx-auto text-center pt-10">File Not Found Or Deleted</h1>
+
+</div>
+
+<div class="text-center text-danger mt-9">
+    <div id="flash-message"></div>
+</div>
+
+<script>
+    if (!this.App) this.App = () => ({});
+
+    const flashMessage = document.getElementById("flash-message")
+
+    document.body.addEventListener("htmx:responseError", function (e) {
+        flashMessage.innerHTML = e.detail.xhr.response;
+        flashMessage.style.display = "block";
+    });
+    document.body.addEventListener("htmx:sendError", function (event) {
+        flashMessage.innerText = event.detail.error.statusText;
+        flashMessage.style.display = "block";
+    });
+    document.body.addEventListener("htmx:beforeRequest", function (event) {
+        flashMessage.style.display = "none";
+    });
+
+    document.addEventListener('click', function (event) {
+        if (event.target.tagName === 'BUTTON' && event.target.textContent === 'Copy Link') {
+            event.target.textContent = 'Link Copied';
+            setTimeout(function () {
+                event.target.textContent = 'Copy Link';
+            }, 500);
+        }
+    });
+
+</script>
+</body>
+</html>

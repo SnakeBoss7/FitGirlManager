@@ -135,8 +135,14 @@ export async function scrape(url) {
   return res.json();
 }
 
-export function buildProxyUrl(fileUrl, filename) {
-  const base = activeApiBase !== null ? activeApiBase : (API_BASES[0] || '');
+export function buildProxyUrl(fileUrl, filename, attempt = 0) {
+  let base = activeApiBase !== null ? activeApiBase : (API_BASES[0] || '');
+
+  // If the active base fails (attempt > 0), force rotation to fallback instances
+  if (attempt > 0 && API_BASES.length > 1) {
+    base = API_BASES[attempt % API_BASES.length];
+  }
+
   return `${base}/api/proxy?url=${encodeURIComponent(fileUrl)}&filename=${encodeURIComponent(filename)}`;
 }
 

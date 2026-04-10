@@ -46,7 +46,9 @@ async def proxy_download(url: str, filename: str, request: Request):
 
     try:
         r = await _shared_client.send(req, stream=True)
+        r.raise_for_status()
     except Exception as e:
+        # Fuckingfast could be overloaded or blocked. Return 502 to trigger client retries.
         raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
 
     async def stream_generator():
@@ -81,7 +83,7 @@ async def proxy_download(url: str, filename: str, request: Request):
     media_type = ct if ct and ct != "application/octet-stream" else "application/octet-stream"
 
     # Use 206 Partial Content if upstream responded with it
-    status_code = r.status_code if r.status_code in (200, 206) else 200
+    status_code = r.status_code
 
     return StreamingResponse(
         stream_generator(),
