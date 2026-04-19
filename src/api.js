@@ -46,6 +46,11 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_M
 
 let activeApiBase = null; // Cache the resolved good base once
 
+/** Reset the cached active base — forces re-probe on next request */
+export function resetActiveBase() {
+  activeApiBase = null;
+}
+
 /**
  * Helper: Try fetching across all available API bases
  */
@@ -144,6 +149,50 @@ export function buildProxyUrl(fileUrl, filename, attempt = 0) {
   }
 
   return `${base}/api/proxy?url=${encodeURIComponent(fileUrl)}&filename=${encodeURIComponent(filename)}`;
+}
+
+/**
+ * Download a file through the proxy with automatic backend failover.
+ * Tries every backend in API_BASES before giving up.
+ * Returns the successful Response object.
+ */
+export async function fetchProxyWithFailover(fileUrl, filename, signal) {
+  let lastError;
+
+  for (let i = 0; i < API_BASES.length; i++) {
+    const base = API_BASES[i] || '';
+    const url = `${base}/api/proxy?url=${encodeURIComponent(fileUrl)}&filename=${encodeURIComponent(filename)}`;
+
+    try {
+      const res = await fetch(url, { signal });
+
+      // 2xx — great, lock onto this backend
+      if (res.ok) {
+        activeApiBase = base;
+        return res;
+      }
+
+      // 4xx — client error, no point retrying a different backend
+      if (res.status >= 400 && res.status < 500) {
+        return res;
+      }
+
+      // 5xx — server error, try next backend
+      console.warn(`[Proxy] ${res.status} from ${base}, trying next backend...`);
+      lastError = new Error(`HTTP ${res.status} from ${base}`);
+      continue;
+    } catch (err) {
+      // User aborted — do not retry
+      if (signal?.aborted || err.name === 'AbortError') throw err;
+
+      console.warn(`[Proxy] Failed to reach ${base}:`, err.message);
+      lastError = err;
+    }
+  }
+
+  // All backends exhausted
+  activeApiBase = null; // force re-probe next time
+  throw lastError || new Error('All backends unreachable for proxy download');
 }
 
 /**

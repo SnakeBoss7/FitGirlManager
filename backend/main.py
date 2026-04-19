@@ -18,11 +18,13 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "https://fitgirlmanager.onrender.com",
         "https://fitgirlmanager-udb0.onrender.com",
+        "https://fitgirlmanager-48at.onrender.com",
         "https://fit-girl-manager.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Length", "Content-Disposition"],
 )
 
 app.include_router(scrape_router, prefix="/api")

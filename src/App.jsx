@@ -4,7 +4,7 @@ import QueueTable from './components/QueueTable'
 import StatsBar from './components/StatsBar'
 import ToastContainer from './components/Toast'
 import { useToast } from './hooks/useToast'
-import { scrape, checkBackendHealth, buildProxyUrl, preresolve } from './api'
+import { scrape, checkBackendHealth, buildProxyUrl, fetchProxyWithFailover, preresolve, resetActiveBase } from './api'
 import { API_BASES } from './config'
 
 
@@ -16,20 +16,17 @@ const supportsDirPicker = typeof window !== 'undefined' && 'showDirectoryPicker'
 
 // ─── Stream-to-disk helper ────────────────────────────────────────────────────
 /**
- * Download a file.
+ * Download a file from an already-fetched Response.
  * - If dirHandle is provided (from showDirectoryPicker): streams directly to disk, ZERO dialogs
  * - Otherwise: accumulates chunks into a Blob and auto-triggers anchor-click download (also zero dialogs)
  *
- * @param {string} proxyUrl - proxy endpoint URL
+ * @param {Response} res - already-fetched Response with body stream
  * @param {string} filename - desired filename
  * @param {AbortSignal} signal - abort signal
  * @param {Function} onProgress - (loaded, total) => void
  * @param {FileSystemDirectoryHandle|null} dirHandle - directory handle for direct-to-disk writes
  */
-async function downloadFile(proxyUrl, filename, signal, onProgress, dirHandle) {
-  const res = await fetch(proxyUrl, { signal })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
+async function streamResponse(res, filename, signal, onProgress, dirHandle) {
   const total = parseInt(res.headers.get('content-length'), 10) || 0
   let loaded = 0
   const reader = res.body.getReader()
@@ -341,16 +338,19 @@ export default function App() {
         }
 
         // Retry loop with exponential backoff
+        // Each attempt uses fetchProxyWithFailover which tries ALL backends
         while (attempts < 3 && !success) {
           if (abortControllerRef.current?.signal.aborted) break
           try {
-            const proxyUrl = buildProxyUrl(item.url, item.filename, attempts)
-            await downloadFile(proxyUrl, item.filename, abortControllerRef.current.signal, onProgress, dirHandle)
+            // fetchProxyWithFailover automatically tries all backends (failover)
+            const res = await fetchProxyWithFailover(item.url, item.filename, abortControllerRef.current.signal)
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            await streamResponse(res, item.filename, abortControllerRef.current.signal, onProgress, dirHandle)
             setItems(old => old.map(i => i.index === item.index ? { ...i, status: 'done' } : i))
             setStats(s => ({ ...s, done: s.done + 1 }))
             success = true
           } catch (err) {
-            if (err.message === 'Aborted') {
+            if (err.message === 'Aborted' || err.name === 'AbortError') {
               // Aborted by user — reset item to pending and stop this worker
               setItems(old => old.map(i => i.index === item.index && i.status === 'downloading' ? { ...i, status: 'pending' } : i))
               break
@@ -358,6 +358,7 @@ export default function App() {
             attempts++
             if (attempts < 3) {
               setItems(old => old.map(i => i.index === item.index ? { ...i, retries: attempts } : i))
+              resetActiveBase() // Force re-probe backends on next attempt
               // Exponential backoff: 2s, 4s
               await new Promise(r => setTimeout(r, 2000 * attempts))
             } else {
