@@ -15,13 +15,13 @@ HEADERS = {
 }
 
 # Primary: extract from window.open("...") in inline script
-DL_URL_RE = re.compile(r'window\.open\("(https://fuckingfast\.co/dl/[^"]+)"')
+DL_URL_RE = re.compile(r'window\.open\("(https://(?:[\w-]+\.)?fuckingfast\.co/dl/[^"]+)"')
 
 # Fallback 1: direct <a href="..."> link to /dl/
-DL_HREF_RE = re.compile(r'href=["\']+(https://fuckingfast\.co/dl/[^"\'>\s]+)["\']')
+DL_HREF_RE = re.compile(r'href=["\']+(https://(?:[\w-]+\.)?fuckingfast\.co/dl/[^"\'>\s]+)["\']')
 
 # Fallback 2: any /dl/ URL anywhere in the page source
-DL_ANYWHERE_RE = re.compile(r'(https://fuckingfast\.co/dl/[\w\-./]+)')
+DL_ANYWHERE_RE = re.compile(r'(https://(?:[\w-]+\.)?fuckingfast\.co/dl/[\w\-./]+)')
 
 
 def _extract_dl_url(html: str) -> Optional[str]:
